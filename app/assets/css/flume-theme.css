@@ -1,0 +1,24 @@
+:root {
+  --flume-charcoal: #303034;
+  --flume-charcoal-raised: #3a3a40;
+  --flume-rich-blue: #4e00ef;
+  --flume-mellow-blue: #546ce7;
+  --flume-rich-purple: #9900ff;
+  --flume-mellow-purple: #a580ff;
+  --flume-teal: #04d3bc;
+  --flume-mint: #96ed95;
+  --flume-lime: #d6ff00;
+  --flume-white: #ffffff;
+  --flume-muted: #9a9aa2;
+}
+
+/* The deck's divider slides cycle every section through this exact sequence
+   (01 blue, 02 mellow-blue, 03 purple, 04 mellow-purple, 05 teal, 06 mint) —
+   reuse it anywhere something needs to be told apart at a glance, like the
+   per-file accent bars in the upload list. */
+.flume-cycle-0 { --accent: var(--flume-rich-blue); }
+.flume-cycle-1 { --accent: var(--flume-mellow-blue); }
+.flume-cycle-2 { --accent: var(--flume-rich-purple); }
+.flume-cycle-3 { --accent: var(--flume-mellow-purple); }
+.flume-cycle-4 { --accent: var(--flume-teal); }
+.flume-cycle-5 { --accent: var(--flume-mint); }
