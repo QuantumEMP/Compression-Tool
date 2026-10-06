@@ -6,7 +6,7 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-01-01',
 
-  css: ['~/assets/css/flume-theme.css'],
+  css: ['~/assets/css/joker-theme.css'],
 
   // Static/edge build target for Cloudflare Pages — this is what makes the
   // deploy work at all. It's also *why* server/api/compress-*.ts can't run

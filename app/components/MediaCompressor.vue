@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useMediaCompression, type MediaKind } from '~/composables/useMediaCompression'
+import type { Suit } from '~/components/SuitIcon.vue'
 
 const {
   tasks,
@@ -11,6 +12,8 @@ const {
   importImagesFromCsv,
   downloadTasksAsZip
 } = useMediaCompression()
+
+type Task = typeof tasks.value[number]
 
 const mode = ref<MediaKind>('image')
 const isDragging = ref(false)
@@ -31,6 +34,24 @@ const videoPreset = ref('fast')
 const accept = computed(() => (mode.value === 'image' ? 'image/*' : 'video/*'))
 
 const visibleTasks = computed(() => tasks.value.filter(t => t.kind === mode.value))
+const queuedCount = computed(() => visibleTasks.value.filter(t => t.status === 'queued').length)
+
+// Each file in the line-up is dealt a suit, in deck order, so neighbours are
+// easy to tell apart. Suits keep real card inks on every deck.
+const SUITS: Suit[] = ['spade', 'heart', 'club', 'diamond']
+const suitFor = (i: number) => SUITS[i % SUITS.length]!
+const suitInk = (suit: Suit) => (suit === 'heart' || suit === 'diamond' ? 'suit-red' : 'suit-black')
+
+// The words on each file's status chip. This is the one place the line-up
+// talks, so it should sound like the ringmaster while staying instantly clear.
+function statusLabel(task: Task): string {
+  switch (task.status) {
+    case 'queued': return 'Rehearsal'
+    case 'uploading': return `Places · ${task.progress}%`
+    case 'done': return 'Curtain call'
+    default: return 'Failed'
+  }
+}
 
 function onFilesPicked(fileList: FileList | null) {
   if (!fileList || fileList.length === 0) return
@@ -54,10 +75,10 @@ async function onCsvPicked(e: Event) {
   try {
     const { found, added, skipped } = await importImagesFromCsv(file)
     csvImportSummary.value = found === 0
-      ? 'No links found in that CSV.'
-      : `Found ${found} link${found === 1 ? '' : 's'} — added ${added} image${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`
+      ? 'No image links in that CSV. Check the file has a column of URLs.'
+      : `Found ${found} link${found === 1 ? '' : 's'}: ${added} image${added === 1 ? '' : 's'} joined the line-up${skipped ? `, ${skipped} skipped` : ''}.`
   } catch {
-    csvImportSummary.value = 'Could not read that CSV file.'
+    csvImportSummary.value = 'We couldn\'t read that CSV file. Try saving it again as plain CSV.'
   } finally {
     isImportingCsv.value = false
   }
@@ -100,183 +121,233 @@ function formatBytes(bytes?: number) {
 </script>
 
 <template>
-  <div class="flume-page">
-    <div class="flume-container">
-      <!-- Header: eyebrow + underline bar, straight from the deck's title treatment -->
-      <header class="flume-header">
-        <p class="flume-eyebrow">
-          Flume Digital Marketing
-        </p>
-        <div class="flume-rule" />
-        <h1 class="flume-h1">
-          MEDIA COMPRESSOR
+  <div class="jk-page">
+    <!-- The table: logo, deck picker, the act's title and the two acts -->
+    <section class="blk blk-base jk-hero">
+      <div class="wrap">
+        <div class="jk-topbar">
+          <a
+            class="marquee"
+            href="/"
+            aria-label="Joker, back to the top"
+          ><span>Joker</span></a>
+          <DeckPicker />
+        </div>
+
+        <h1 class="section-title">
+          The shrinking act
         </h1>
-        <p class="flume-sub">
-          Shrink images and video without leaving your browser tab.
+        <p class="section-sub jk-hero-sub">
+          Images and video squeezed small, right here in your browser tab. Nothing leaves the big top but the smaller file.
         </p>
-      </header>
 
-      <!-- Mode toggle -->
-      <div
-        class="flume-toggle"
-        role="tablist"
-        aria-label="Media type"
-      >
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="mode === 'image'"
-          class="flume-toggle-btn"
-          :class="{ 'is-active': mode === 'image' }"
-          @click="mode = 'image'"
+        <div
+          class="jk-modes"
+          role="tablist"
+          aria-label="Media type"
         >
-          Images
-        </button>
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="mode === 'video'"
-          class="flume-toggle-btn"
-          :class="{ 'is-active': mode === 'video' }"
-          @click="mode = 'video'"
-        >
-          Video
-        </button>
-      </div>
-
-      <!-- Output settings, specific to the active mode -->
-      <section class="flume-card flume-settings">
-        <template v-if="mode === 'image'">
-          <label class="flume-field">
-            <span>Output format</span>
-            <select
-              v-model="imageFormat"
-              class="flume-select"
-            >
-              <option value="webp">WebP</option>
-              <option value="jpeg">JPEG</option>
-              <option value="png">PNG</option>
-              <option value="avif">AVIF</option>
-            </select>
-          </label>
-          <label class="flume-field flume-field-wide">
-            <span>Quality — {{ imageQuality }}</span>
-            <input
-              v-model.number="imageQuality"
-              type="range"
-              min="10"
-              max="100"
-              class="flume-range"
-            >
-          </label>
-        </template>
-
-        <template v-else>
-          <label class="flume-field">
-            <span>Output format</span>
-            <select
-              v-model="videoFormat"
-              class="flume-select"
-            >
-              <option value="mp4">MP4 (H.264)</option>
-              <option value="webm">WebM (VP9)</option>
-            </select>
-          </label>
-          <label class="flume-field flume-field-wide">
-            <span>Quality (CRF — lower is better) — {{ videoCrf }}</span>
-            <input
-              v-model.number="videoCrf"
-              type="range"
-              min="18"
-              max="40"
-              class="flume-range"
-            >
-          </label>
-          <label class="flume-field">
-            <span>Encode speed</span>
-            <select
-              v-model="videoPreset"
-              class="flume-select"
-            >
-              <option value="ultrafast">Ultrafast</option>
-              <option value="fast">Fast</option>
-              <option value="medium">Medium</option>
-              <option value="slow">Slow (smaller file)</option>
-            </select>
-          </label>
-        </template>
-      </section>
-
-      <!-- Dropzone -->
-      <section
-        class="flume-dropzone"
-        :class="{ 'is-dragging': isDragging }"
-        @dragover.prevent="isDragging = true"
-        @dragleave.prevent="isDragging = false"
-        @drop.prevent="onDrop"
-        @click="fileInput?.click()"
-      >
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          :accept="accept"
-          class="sr-only"
-          @change="onFilesPicked(($event.target as HTMLInputElement).files)"
-        >
-        <p class="flume-dropzone-title">
-          Drop {{ mode === 'image' ? 'images' : 'videos' }} here
-        </p>
-        <p class="flume-dropzone-sub">
-          or click to browse — multiple files run at the same time
-        </p>
-      </section>
-
-      <!-- CSV import: pulls image links out of a spreadsheet export -->
-      <section
-        v-if="mode === 'image'"
-        class="flume-csv"
-      >
-        <input
-          ref="csvInput"
-          type="file"
-          accept=".csv,text/csv"
-          class="sr-only"
-          @change="onCsvPicked"
-        >
-        <button
-          type="button"
-          class="flume-btn flume-btn-ghost"
-          :disabled="isImportingCsv"
-          @click="csvInput?.click()"
-        >
-          {{ isImportingCsv ? 'Importing…' : 'Import image links from CSV' }}
-        </button>
-        <p
-          v-if="csvImportSummary"
-          class="flume-csv-summary"
-        >
-          {{ csvImportSummary }}
-        </p>
-      </section>
-
-      <!-- File list -->
-      <section
-        v-if="visibleTasks.length"
-        class="flume-list"
-      >
-        <div class="flume-list-header">
           <button
             type="button"
-            class="flume-btn flume-btn-primary"
-            :disabled="isProcessing"
-            @click="compressAll"
+            role="tab"
+            class="chip jk-mode"
+            :aria-selected="mode === 'image'"
+            @click="mode = 'image'"
           >
-            {{ isProcessing ? 'Compressing…' : `Compress all (${visibleTasks.filter(t => t.status === 'queued').length})` }}
+            Images
           </button>
           <button
             type="button"
-            class="flume-btn flume-btn-ghost"
+            role="tab"
+            class="chip jk-mode"
+            :aria-selected="mode === 'video'"
+            @click="mode = 'video'"
+          >
+            Video
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- The ring: drop files in, set the recipe beside it -->
+    <section class="blk blk-gold">
+      <div class="wrap jk-ring">
+        <div class="jk-stage">
+          <span
+            class="sticker jk-sticker"
+            aria-hidden="true"
+          >toss them in!</span>
+
+          <input
+            ref="fileInput"
+            type="file"
+            multiple
+            :accept="accept"
+            class="sr-only"
+            tabindex="-1"
+            @change="onFilesPicked(($event.target as HTMLInputElement).files)"
+          >
+          <button
+            type="button"
+            class="stock jk-dropzone"
+            :class="{ 'is-dragging': isDragging }"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="onDrop"
+            @click="fileInput?.click()"
+          >
+            <span
+              class="jk-dropzone-suits"
+              aria-hidden="true"
+            >
+              <SuitIcon
+                v-for="s in SUITS"
+                :key="s"
+                :suit="s"
+                :class="suitInk(s)"
+              />
+            </span>
+            <span class="object-title">
+              Drop {{ mode === 'image' ? 'images' : 'videos' }} into the ring
+            </span>
+            <span class="jk-dropzone-sub">
+              or click to pick them. Every file performs at the same time.
+            </span>
+          </button>
+
+          <div
+            v-if="mode === 'image'"
+            class="jk-csv"
+          >
+            <input
+              ref="csvInput"
+              type="file"
+              accept=".csv,text/csv"
+              class="sr-only"
+              tabindex="-1"
+              @change="onCsvPicked"
+            >
+            <button
+              type="button"
+              class="btn"
+              :disabled="isImportingCsv"
+              @click="csvInput?.click()"
+            >
+              {{ isImportingCsv ? 'Reading the list…' : 'Import image links from a CSV' }}
+            </button>
+            <p
+              v-if="csvImportSummary"
+              class="jk-csv-summary"
+              aria-live="polite"
+            >
+              {{ csvImportSummary }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Output settings, specific to the active mode -->
+        <aside
+          class="stock jk-note"
+          aria-labelledby="recipe-title"
+        >
+          <h2
+            id="recipe-title"
+            class="object-title"
+          >
+            The recipe
+          </h2>
+
+          <template v-if="mode === 'image'">
+            <label class="jk-field">
+              <span class="label">Output format</span>
+              <select
+                v-model="imageFormat"
+                class="jk-input"
+              >
+                <option value="webp">WebP</option>
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+                <option value="avif">AVIF</option>
+              </select>
+            </label>
+            <label class="jk-field">
+              <span class="label">Quality: {{ imageQuality }}</span>
+              <input
+                v-model.number="imageQuality"
+                type="range"
+                min="10"
+                max="100"
+                class="jk-range"
+              >
+            </label>
+          </template>
+
+          <template v-else>
+            <label class="jk-field">
+              <span class="label">Output format</span>
+              <select
+                v-model="videoFormat"
+                class="jk-input"
+              >
+                <option value="mp4">MP4 (H.264)</option>
+                <option value="webm">WebM (VP9)</option>
+              </select>
+            </label>
+            <label class="jk-field">
+              <span class="label">Quality (CRF, lower is better): {{ videoCrf }}</span>
+              <input
+                v-model.number="videoCrf"
+                type="range"
+                min="18"
+                max="40"
+                class="jk-range"
+              >
+            </label>
+            <label class="jk-field">
+              <span class="label">Encode speed</span>
+              <select
+                v-model="videoPreset"
+                class="jk-input"
+              >
+                <option value="ultrafast">Ultrafast</option>
+                <option value="fast">Fast</option>
+                <option value="medium">Medium</option>
+                <option value="slow">Slow (smaller file)</option>
+              </select>
+            </label>
+          </template>
+        </aside>
+      </div>
+    </section>
+
+    <!-- The line-up: every queued file, dealt a suit -->
+    <section
+      v-if="visibleTasks.length"
+      class="blk blk-primary"
+      aria-labelledby="lineup-title"
+    >
+      <div class="wrap">
+        <h2
+          id="lineup-title"
+          class="section-title"
+        >
+          The line-up
+        </h2>
+        <p class="section-sub jk-lineup-sub">
+          {{ visibleTasks.length }} {{ mode === 'image' ? 'image' : 'video' }}{{ visibleTasks.length === 1 ? '' : 's' }} waiting in the wings.
+        </p>
+
+        <div class="jk-actions">
+          <button
+            type="button"
+            class="btn btn-gold"
+            :disabled="isProcessing || queuedCount === 0"
+            @click="compressAll"
+          >
+            {{ isProcessing ? 'Shrinking…' : `Shrink them all (${queuedCount})` }}
+          </button>
+          <button
+            type="button"
+            class="btn"
             :disabled="isZipping || !visibleTasks.some(t => t.status === 'done')"
             @click="downloadAllAsZip"
           >
@@ -284,357 +355,358 @@ function formatBytes(bytes?: number) {
           </button>
           <button
             type="button"
-            class="flume-btn flume-btn-ghost"
+            class="btn"
             @click="clearFinished"
           >
             Clear finished
           </button>
         </div>
 
-        <div
-          v-for="(task, i) in visibleTasks"
-          :key="task.id"
-          class="flume-task"
-          :class="`flume-cycle-${i % 6}`"
+        <ul
+          class="jk-tasks"
+          aria-live="polite"
         >
-          <div class="flume-task-accent" />
-          <div class="flume-task-body">
-            <div class="flume-task-top">
-              <span class="flume-task-name">{{ task.file.name }}</span>
-              <span class="flume-task-size">{{ formatBytes(task.file.size) }}</span>
-            </div>
+          <li
+            v-for="(task, i) in visibleTasks"
+            :key="task.id"
+            class="stock jk-task"
+          >
+            <SuitIcon
+              :suit="suitFor(i)"
+              :class="suitInk(suitFor(i))"
+              class="jk-task-suit"
+            />
 
-            <div class="flume-progress-track">
+            <div class="jk-task-body">
+              <div class="jk-task-top">
+                <span class="jk-task-name">{{ task.file.name }}</span>
+                <span class="label jk-task-size">{{ formatBytes(task.file.size) }}</span>
+              </div>
+
               <div
-                class="flume-progress-fill"
-                :class="{ 'is-error': task.status === 'error' }"
-                :style="{ width: `${task.progress}%` }"
-              />
-            </div>
+                class="jk-progress"
+                role="progressbar"
+                :aria-valuenow="task.progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-label="`${task.file.name} progress`"
+              >
+                <div
+                  class="jk-progress-fill"
+                  :class="{ 'is-error': task.status === 'error' }"
+                  :style="{ width: `${task.progress}%` }"
+                />
+              </div>
 
-            <div class="flume-task-bottom">
-              <span
-                class="flume-status"
-                :class="`flume-status-${task.status}`"
-              >
-                {{ task.status === 'queued' ? 'Waiting' : task.status === 'uploading' ? `${task.progress}%` : task.status === 'done' ? 'Done' : 'Failed' }}
-              </span>
-              <span
-                v-if="task.status === 'error'"
-                class="flume-error-msg"
-              >{{ task.errorMessage }}</span>
-              <a
-                v-if="task.status === 'done'"
-                :href="task.resultUrl"
-                :download="`compressed-${task.resultName ?? task.file.name}`"
-                class="flume-download"
-              >
-                Download ({{ formatBytes(task.resultSize) }})
-              </a>
-              <button
-                type="button"
-                class="flume-remove"
-                @click="removeTask(task.id)"
-              >
-                Remove
-              </button>
+              <div class="jk-task-bottom">
+                <span
+                  class="chip jk-status"
+                  :class="`jk-status-${task.status}`"
+                >
+                  {{ statusLabel(task) }}
+                </span>
+                <span
+                  v-if="task.status === 'error'"
+                  class="jk-error-msg"
+                >{{ task.errorMessage }}</span>
+                <a
+                  v-if="task.status === 'done'"
+                  :href="task.resultUrl"
+                  :download="`compressed-${task.resultName ?? task.file.name}`"
+                  class="jk-download"
+                >
+                  Download ({{ formatBytes(task.resultSize) }})
+                </a>
+                <button
+                  type="button"
+                  class="jk-remove"
+                  :aria-label="`Remove ${task.file.name}`"
+                  @click="removeTask(task.id)"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
-    </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="blk blk-base jk-footer">
+      <div class="wrap">
+        <p class="section-sub">
+          Life is like a deck of cards; sometimes you have to play the joker.
+        </p>
+      </div>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-.flume-page {
+.jk-page {
   min-height: 100dvh;
-  background: var(--flume-charcoal);
-  color: var(--flume-white);
-  font-family: Arial, Helvetica, sans-serif;
-  padding: 3rem 1.5rem 6rem;
   overflow-x: hidden;
+  font-size: 17px;
+  line-height: 1.65;
 }
 
-.flume-container {
-  max-width: 760px;
-  margin: 0 auto;
+/* Hero */
+.jk-hero {
+  border-top: none;
+  padding-top: var(--space-gutter);
 }
 
-.flume-eyebrow {
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  color: var(--flume-muted);
-  margin: 0 0 0.6rem;
-}
-
-.flume-rule {
-  width: 88px;
-  height: 4px;
-  background: var(--flume-rich-purple);
-  margin-bottom: 1.25rem;
-}
-
-.flume-h1 {
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  margin: 0 0 0.5rem;
-  text-transform: uppercase;
-}
-
-.flume-sub {
-  color: var(--flume-muted);
-  margin: 0 0 2.5rem;
-  font-size: 1rem;
-}
-
-.flume-toggle {
-  display: inline-flex;
-  background: var(--flume-charcoal-raised);
-  border-radius: 999px;
-  padding: 4px;
-  margin-bottom: 1.5rem;
-}
-
-.flume-toggle-btn {
-  border: none;
-  background: transparent;
-  color: var(--flume-muted);
-  font-family: inherit;
-  font-weight: 700;
-  font-size: 0.875rem;
-  padding: 0.6rem 1.5rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.flume-toggle-btn.is-active {
-  background: var(--flume-rich-purple);
-  color: var(--flume-white);
-}
-
-.flume-card {
-  background: var(--flume-charcoal-raised);
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.flume-settings {
+.jk-topbar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: var(--space-gutter);
+  margin-bottom: var(--space-block-sm);
 }
 
-.flume-field {
+.jk-hero-sub {
+  max-width: 34ch;
+  margin-top: var(--space-stack);
+}
+
+.jk-modes {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--flume-muted);
-  flex: 1 1 160px;
+  gap: var(--space-chip);
+  margin-top: 40px;
 }
 
-.flume-field-wide {
-  flex: 2 1 240px;
+.jk-mode {
+  cursor: pointer;
+  padding: 10px 22px;
+  font-size: 17px;
 }
 
-.flume-select {
-  background: var(--flume-charcoal);
-  color: var(--flume-white);
-  border: 1px solid #4a4a52;
-  border-radius: 8px;
-  padding: 0.55rem 0.75rem;
-  font-family: inherit;
-  font-size: 0.9rem;
+.jk-mode[aria-selected="true"] {
+  background: var(--gold);
+  box-shadow: 5px 5px 0 var(--drop);
 }
 
-.flume-range {
-  accent-color: var(--flume-mellow-purple);
+/* The ring: dropzone beside the recipe note */
+.jk-ring {
+  display: grid;
+  gap: var(--space-grid);
+  align-items: start;
 }
 
-.flume-dropzone {
-  border: 2px dashed #55555c;
-  border-radius: 16px;
-  padding: 3rem 1.5rem;
+@media (min-width: 1024px) {
+  .jk-ring { grid-template-columns: 1.6fr 1fr; }
+}
+
+.jk-stage {
+  position: relative;
+}
+
+.jk-sticker {
+  position: absolute;
+  top: -22px;
+  right: -8px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.jk-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 56px var(--space-object);
+  border-width: var(--stroke-feature);
+  border-style: dashed;
+  border-radius: var(--radius-panel);
+  box-shadow: 10px 10px 0 var(--ink);
+  font: inherit;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-  margin-bottom: 2rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.flume-dropzone.is-dragging,
-.flume-dropzone:hover {
-  border-color: var(--flume-mellow-purple);
-  background: rgba(165, 128, 255, 0.06);
+.jk-dropzone:hover,
+.jk-dropzone.is-dragging {
+  border-style: solid;
+  transform: translate(-3px, -3px);
+  box-shadow: 13px 13px 0 var(--ink);
 }
 
-.flume-dropzone-title {
-  font-weight: 700;
-  font-size: 1.1rem;
-  margin: 0 0 0.35rem;
+.jk-dropzone-suits {
+  display: flex;
+  gap: 10px;
+  font-size: 28px;
 }
 
-.flume-dropzone-sub {
-  color: var(--flume-muted);
-  font-size: 0.85rem;
-  margin: 0;
+.jk-dropzone-sub {
+  font-size: 17px;
 }
 
-.flume-csv {
+.jk-csv {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: -1.25rem;
-  margin-bottom: 2rem;
+  gap: var(--space-stack);
+  margin-top: 36px;
 }
 
-.flume-csv-summary {
-  color: var(--flume-muted);
-  font-size: 0.85rem;
+.jk-csv-summary {
   margin: 0;
 }
 
-.flume-list-header {
+.jk-note {
+  display: grid;
+  gap: 20px;
+  padding: var(--space-object);
+  border-width: var(--stroke-feature);
+  border-radius: var(--radius-note);
+  box-shadow: 10px 10px 0 var(--ink);
+  rotate: var(--tilt-note);
+}
+
+.jk-field {
+  display: grid;
+  gap: 6px;
+}
+
+.jk-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: var(--stroke-chip) solid var(--ink);
+  border-radius: var(--radius-input);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px var(--font-sans);
+}
+
+.jk-range {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
+/* The line-up */
+.jk-lineup-sub {
+  margin: var(--space-stack) 0 40px;
+}
+
+.jk-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  gap: var(--space-stack);
+  margin-bottom: 40px;
 }
 
-.flume-btn {
-  font-family: inherit;
-  font-weight: 700;
-  font-size: 0.875rem;
-  border-radius: 999px;
-  padding: 0.7rem 1.5rem;
-  border: none;
-  cursor: pointer;
+.jk-tasks {
+  display: grid;
+  gap: var(--space-gutter);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.flume-btn-primary {
-  background: var(--flume-rich-purple);
-  color: var(--flume-white);
-}
-
-.flume-btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.flume-btn-ghost {
-  background: transparent;
-  color: var(--flume-muted);
-  border: 1px solid #4a4a52;
-}
-
-.flume-task {
+.jk-task {
   display: flex;
-  background: var(--flume-charcoal-raised);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 0.75rem;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 20px 24px;
+  border-radius: var(--radius-card);
 }
 
-.flume-task-accent {
-  width: 5px;
-  background: var(--accent);
-  flex-shrink: 0;
+.jk-task-suit {
+  font-size: 32px;
+  margin-top: 2px;
 }
 
-.flume-task-body {
-  padding: 1rem 1.25rem;
+.jk-task-body {
   flex: 1;
   min-width: 0;
 }
 
-.flume-task-top {
+.jk-task-top {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
+  align-items: baseline;
+  gap: var(--space-stack);
+  margin-bottom: 10px;
 }
 
-.flume-task-name {
+.jk-task-name {
   font-weight: 700;
-  font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.flume-task-size {
-  color: var(--flume-muted);
-  font-size: 0.8rem;
+.jk-task-size {
   flex-shrink: 0;
 }
 
-.flume-progress-track {
-  height: 6px;
-  border-radius: 999px;
-  background: #4a4a52;
+.jk-progress {
+  height: 14px;
+  border: var(--stroke-chip) solid var(--ink);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
   overflow: hidden;
-  margin-bottom: 0.6rem;
+  margin-bottom: 14px;
 }
 
-.flume-progress-fill {
+.jk-progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: var(--primary);
   transition: width 0.2s ease;
 }
 
-.flume-progress-fill.is-error {
-  background: #ff5c5c;
+/* Flat colour only: a failed run fills with ink, and the chip says why */
+.jk-progress-fill.is-error {
+  background: var(--ink);
 }
 
-.flume-task-bottom {
+.jk-task-bottom {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  font-size: 0.8rem;
+  flex-wrap: wrap;
+  gap: 8px var(--space-stack);
 }
 
-.flume-status-queued { color: var(--flume-muted); }
-.flume-status-uploading { color: var(--flume-mellow-blue); }
-.flume-status-done { color: var(--flume-mint); font-weight: 700; }
-.flume-status-error { color: #ff5c5c; font-weight: 700; }
+.jk-status { font-size: 14px; padding: 4px 12px; }
+.jk-status-done { background: var(--gold); }
+.jk-status-error { background: var(--ink); color: var(--paper); }
 
-.flume-error-msg {
-  color: #ff8f8f;
+.jk-error-msg {
+  font-size: 15px;
 }
 
-.flume-download {
-  color: var(--flume-lime);
+.jk-download {
+  margin-left: auto;
+  color: var(--primary);
   font-weight: 700;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.jk-remove {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: 700 15px var(--font-sans);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.jk-task-bottom:not(:has(.jk-download)) .jk-remove {
   margin-left: auto;
 }
 
-.flume-download:hover {
-  text-decoration: underline;
+.jk-footer {
+  padding: 48px 0;
 }
 
-.flume-remove {
-  background: none;
-  border: none;
-  color: var(--flume-muted);
-  font-family: inherit;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+@media (prefers-reduced-motion: reduce) {
+  .jk-dropzone,
+  .jk-progress-fill { transition: none; }
 }
 </style>
